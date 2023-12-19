@@ -63,7 +63,7 @@ class GraphConvolution(nn.Module):
         self.dropout = nn.Dropout(dropout)
 
         self.position = nn.Linear(64, 3)
-        self.rotation = nn.Linear(64, 4)
+        self.rotation = nn.Linear(64, 3)
 
     def forward(self, x, edge_index):
         x = F.leaky_relu(self.conv1(x, edge_index))
@@ -75,7 +75,7 @@ class GraphConvolution(nn.Module):
         position = self.position(x)
         rotation = self.rotation(x)
 
-        rotation = F.normalize(rotation, p=2, dim=1)
+        # rotation = F.normalize(rotation, p=2, dim=1)
 
         return torch.cat((position, rotation), dim=1)
 

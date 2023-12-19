@@ -11,8 +11,6 @@ from dataset import KittiSequenceDataset, MultipleSequenceGraphDataset, Sequence
 from loss import AllNodesLoss, JustLastNodeLoss
 from model import GraphVO
 
-from torch_geometric.utils import dropout_edge, dropout_node
-
 from utils import ResetToFirstNode
 
 import matplotlib.pyplot as plt
@@ -97,8 +95,8 @@ transform = T.Compose(
     ]
 )
 
-GRAPH_LENGTH = 35
-BATCH_SIZE = 128
+GRAPH_LENGTH = 16
+BATCH_SIZE = 64
 
 train_dataset = MultipleSequenceGraphDataset(
     train_kitti_datasets, graph_length=GRAPH_LENGTH, transform=transform
@@ -109,6 +107,19 @@ train_dataloader = DataLoader(
     batch_size=BATCH_SIZE,
     num_workers=0 if __debug__ else 14,
 )
+
+plt.figure()
+for i in range(10):
+    # get random sample from dataset
+    data = train_dataset[np.random.randint(len(train_dataset))]
+    plt.plot(data.y[:, 0], data.y[:, 2], label=f"Sample {i}")
+    plt.scatter(data.y[:, 0], data.y[:, 2], s=1)
+plt.xlabel("x")
+plt.ylabel("z")
+plt.legend()
+plt.show()
+
+exit()
 
 eval_dataset = SequenceGraphDataset(
     base_dataset=KittiSequenceDataset(basedir_kitti, "05"),
@@ -137,7 +148,7 @@ optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
 EPOCHS = 100
 SAVE_MODEL = True
 SAVE_INTERVAL = 100
-SAVE_DIR = "models_reset_to_first_node"
+SAVE_DIR = "models_euler"
 os.makedirs(SAVE_DIR, exist_ok=True)
 
 for epoch in range(1, EPOCHS + 1):

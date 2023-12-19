@@ -4,7 +4,6 @@ from torch_geometric.data import Dataset as GraphDataset
 from torch_geometric.data import Data
 import pykitti
 import numpy as np
-from utils import extract_position_rotation
 from typing import Union, List
 from torchvision.transforms import v2 as tv2
 
@@ -58,8 +57,7 @@ class KittiSequenceDataset(dataset.Dataset):
 
         try:
             pose = self.sequence.poses[index]
-            pose = extract_position_rotation(pose)
-            pose = np.concatenate((pose["position"], pose["rotation"].as_quat()))
+            pose = np.concatenate([pose[:3, 3], pose[:3, :3].ravel()])
         except IndexError as e:
             print(f"Index {index} out of range for sequence {self.sequence_name}")
             raise e

@@ -39,8 +39,7 @@ class AllNodesLoss(torch.nn.Module):
         self.alpha = alpha
 
     def forward(self, pred: torch.Tensor, target: torch.Tensor):
-        assert pred.shape == target.shape, "pred and target should have the same shape."
-        assert pred.shape[1] == 7, "pred and target should have 7 columns."
+        assert pred.shape == target.shape, f"pred and target should have the same shape, got {pred.shape} and {target.shape}."
 
         position_pred = pred[:, :3]
         position_target = target[:, :3]
