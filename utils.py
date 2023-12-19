@@ -1,4 +1,5 @@
 from scipy.spatial.transform import Rotation as R
+from pyquaternion import Quaternion
 from typing import Union
 
 import torch
@@ -46,20 +47,27 @@ class ResetToFirstNode(BaseTransform):
         for store in data.node_stores:
             if "y" not in store:
                 continue
-            y = store.y
-            # reset position of all nodes to first node so, node[i] - node[0] 
-            # is the relative position of node[i] to node[0]
-
+            y = store.y.numpy()
             positions = y[:, :3]
-            rotations = [R.from_quat(x) for x in y[:, 3:]]
+            rotations = [Quaternion(x) for x in y[:, 3:]]
 
             first_position = positions[0]
             positions = positions - first_position
-            
+
             first_rotation = rotations[0]
-            rotations = [x * first_rotation.inv() for x in rotations]
-            rotations = np.array([x.as_quat() for x in rotations])
-            rotations = torch.tensor(rotations, dtype=torch.float32)
+            inverse_first_rotation = first_rotation.inverse
+
+            for i in range(1, len(positions)):
+                # rotate positions with respect to first node's rotation
+                positions[i] = inverse_first_rotation.rotate(positions[i])
+                rotations[i] = (
+                    inverse_first_rotation * rotations[i]
+                )  # apply relative rotation
+                
+            positions = torch.tensor(positions, dtype=torch.float32)
+            rotations = torch.tensor(
+                np.array([x.elements for x in rotations]), dtype=torch.float32
+            )
 
             store.y = torch.cat((positions, rotations), dim=1)
 

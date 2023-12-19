@@ -15,6 +15,8 @@ from torch_geometric.utils import dropout_edge, dropout_node
 
 from utils import ResetToFirstNode
 
+import matplotlib.pyplot as plt
+
 
 def train(
     model,
@@ -51,7 +53,7 @@ def train(
                 os.path.join(save_dir, f"model_{epoch}_{batch_idx}.pth"),
             )
     if save_model:
-        torch.save(model.state_dict(), os.path.join(save_dir, "model.pth"))
+        torch.save(model.state_dict(), os.path.join(save_dir, f"model_after_{epoch}.pth"))
     print(f"Train Epoch {epoch}: {np.mean(loss_list)}")
     return model
 
@@ -95,12 +97,13 @@ transform = T.Compose(
     ]
 )
 
-GRAPH_LENGTH = 6
+GRAPH_LENGTH = 35
 BATCH_SIZE = 128
 
 train_dataset = MultipleSequenceGraphDataset(
     train_kitti_datasets, graph_length=GRAPH_LENGTH, transform=transform
 )
+
 train_dataloader = DataLoader(
     train_dataset,
     batch_size=BATCH_SIZE,
@@ -111,6 +114,12 @@ eval_dataset = SequenceGraphDataset(
     base_dataset=KittiSequenceDataset(basedir_kitti, "05"),
     graph_length=GRAPH_LENGTH,
     transform=transform,
+)
+
+eval_dataloader = DataLoader(
+    eval_dataset,
+    batch_size=BATCH_SIZE,
+    num_workers=0 if __debug__ else 14,
 )
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -128,7 +137,7 @@ optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
 EPOCHS = 100
 SAVE_MODEL = True
 SAVE_INTERVAL = 100
-SAVE_DIR = "models"
+SAVE_DIR = "models_reset_to_first_node"
 os.makedirs(SAVE_DIR, exist_ok=True)
 
 for epoch in range(1, EPOCHS + 1):
@@ -143,5 +152,5 @@ for epoch in range(1, EPOCHS + 1):
         SAVE_INTERVAL,
         SAVE_DIR,
     )
-    eval_loss = evaluate(model, eval_dataset, criterion, device, epoch)
+    eval_loss = evaluate(model, eval_dataloader, criterion, device, epoch)
     print(f"Eval loss: {eval_loss}")
