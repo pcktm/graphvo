@@ -88,7 +88,8 @@ class GraphVO(torch.nn.Module):
 
     def forward(self, x, edge_index):
         # from each image extract features and replace the image with the features
-        x = x.view(-1, 3, 224, 224)
+        # x is of shape (batch_size * graph_length, 3, 64, 64)
+        x = x.view(-1, 3, 64, 64)
         x = self.extract_features(x)
         x = x.view(-1, 1024)
 

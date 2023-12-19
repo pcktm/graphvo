@@ -1,16 +1,19 @@
 import os
 from torch_geometric.loader import DataLoader
 from scipy.spatial.transform import Rotation as R
+import torch_geometric.transforms as T
 import torch
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 import numpy as np
 
-from dataset import KittiSequenceDataset, MultipleSequenceGraphDataset
-from loss import JustLastNodeLoss
+from dataset import KittiSequenceDataset, MultipleSequenceGraphDataset, SequenceGraphDataset
+from loss import AllNodesLoss, JustLastNodeLoss
 from model import GraphVO
 
 from torch_geometric.utils import dropout_edge, dropout_node
+
+from utils import ResetToFirstNode
 
 
 def train(
@@ -29,12 +32,14 @@ def train(
     progress_bar = tqdm(
         train_loader, desc=f"Train Epoch {epoch}", total=len(train_loader)
     )
+    loss_list = []
     for batch_idx, data in enumerate(progress_bar):
         data = data.to(device)
         optimizer.zero_grad()
-        output = model(data)
+        output = model(data.x, data.edge_index)
         loss = criterion(output, data.y)
         loss.backward()
+        loss_list.append(loss.item())
         optimizer.step()
         if scheduler is not None:
             scheduler.step()
@@ -47,6 +52,7 @@ def train(
             )
     if save_model:
         torch.save(model.state_dict(), os.path.join(save_dir, "model.pth"))
+    print(f"Train Epoch {epoch}: {np.mean(loss_list)}")
     return model
 
 
@@ -62,7 +68,7 @@ def evaluate(
     loss_list = []
     for batch_idx, data in enumerate(progress_bar):
         data = data.to(device)
-        output = model(data)
+        output = model(data.x, data.edge_index)
         loss = criterion(output, data.y)
         loss_list.append(loss.item())
         progress_bar.set_postfix(loss=loss.item())
@@ -71,7 +77,7 @@ def evaluate(
 
 os.makedirs("data", exist_ok=True)
 basedir_kitti = "/home/pcktm/inzynierka/kitti/dataset"
-train_sequences_kitti = ["00", "01", "02", "03", "04", "05", "06", "07", "08"]
+train_sequences_kitti = ["00", "02", "08", "09"]
 train_kitti_datasets = [
     KittiSequenceDataset(
         basedir_kitti,
@@ -80,22 +86,43 @@ train_kitti_datasets = [
     for sequence_name in train_sequences_kitti
 ]
 
-GRAPH_LENGTH = 5
-BATCH_SIZE = 64
+transform = T.Compose(
+    [
+        ResetToFirstNode(),
+        T.RemoveDuplicatedEdges(),
+        T.ToUndirected(),
+        T.VirtualNode(),
+    ]
+)
 
-train_dataset = MultipleSequenceGraphDataset(train_kitti_datasets, graph_length=5)
+GRAPH_LENGTH = 6
+BATCH_SIZE = 128
+
+train_dataset = MultipleSequenceGraphDataset(
+    train_kitti_datasets, graph_length=GRAPH_LENGTH, transform=transform
+)
 train_dataloader = DataLoader(
     train_dataset,
     batch_size=BATCH_SIZE,
+    num_workers=0 if __debug__ else 14,
+)
+
+eval_dataset = SequenceGraphDataset(
+    base_dataset=KittiSequenceDataset(basedir_kitti, "05"),
+    graph_length=GRAPH_LENGTH,
+    transform=transform,
 )
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device {device}")
 
 model = GraphVO().to(device)
-criterion = JustLastNodeLoss(
-    batch_size=BATCH_SIZE, graph_length=GRAPH_LENGTH, alpha=20
-).to(device)
+
+# criterion = JustLastNodeLoss(
+#     alpha=20, batch_size=BATCH_SIZE, graph_length=GRAPH_LENGTH
+# ).to(device)
+
+criterion = AllNodesLoss(alpha=20).to(device)
 optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
 
 EPOCHS = 100
@@ -116,3 +143,5 @@ for epoch in range(1, EPOCHS + 1):
         SAVE_INTERVAL,
         SAVE_DIR,
     )
+    eval_loss = evaluate(model, eval_dataset, criterion, device, epoch)
+    print(f"Eval loss: {eval_loss}")

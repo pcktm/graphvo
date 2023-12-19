@@ -1,5 +1,14 @@
 from scipy.spatial.transform import Rotation as R
+from typing import Union
+
 import torch
+from torch import Tensor
+import numpy as np
+
+from torch_geometric.data import Data, HeteroData
+from torch_geometric.data.datapipes import functional_transform
+from torch_geometric.transforms import BaseTransform
+
 
 def extract_position_rotation(transform):
     """
@@ -26,3 +35,32 @@ def extract_position_rotation(transform):
     rotation = R.from_matrix(rotation_matrix)
 
     return {"position": position, "rotation": rotation}
+
+
+@functional_transform("reset_to_first_node")
+class ResetToFirstNode(BaseTransform):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, data: Union[Data, HeteroData]) -> Union[Data, HeteroData]:
+        for store in data.node_stores:
+            if "y" not in store:
+                continue
+            y = store.y
+            # reset position of all nodes to first node so, node[i] - node[0] 
+            # is the relative position of node[i] to node[0]
+
+            positions = y[:, :3]
+            rotations = [R.from_quat(x) for x in y[:, 3:]]
+
+            first_position = positions[0]
+            positions = positions - first_position
+            
+            first_rotation = rotations[0]
+            rotations = [x * first_rotation.inv() for x in rotations]
+            rotations = np.array([x.as_quat() for x in rotations])
+            rotations = torch.tensor(rotations, dtype=torch.float32)
+
+            store.y = torch.cat((positions, rotations), dim=1)
+
+        return data

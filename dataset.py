@@ -4,7 +4,7 @@ from torch_geometric.data import Dataset as GraphDataset
 from torch_geometric.data import Data
 import pykitti
 import numpy as np
-import os
+from utils import extract_position_rotation
 from typing import Union, List
 from torchvision.transforms import v2 as tv2
 
@@ -36,6 +36,7 @@ class KittiSequenceDataset(dataset.Dataset):
                 tv2.ToDtype(torch.float32, scale=True),
             ]
         )
+        self.loaded_items_cache = {}
 
     def __len__(self):
         return self.num_samples
@@ -49,11 +50,16 @@ class KittiSequenceDataset(dataset.Dataset):
         elif isinstance(index, list):
             return [self[i] for i in index]
 
+        if index in self.loaded_items_cache:
+            return self.loaded_items_cache[index]
+
         image = self.sequence.get_cam2(index) if self.load_images else None
         image = self.default_transform(image) if image is not None else None
 
         try:
             pose = self.sequence.poses[index]
+            pose = extract_position_rotation(pose)
+            pose = np.concatenate((pose["position"], pose["rotation"].as_quat()))
         except IndexError as e:
             print(f"Index {index} out of range for sequence {self.sequence_name}")
             raise e
@@ -66,8 +72,12 @@ class KittiSequenceDataset(dataset.Dataset):
 
         if self.return_rich_sample:
             return image, pose, self.timestamps[index]
+        
+        data = (image, torch.tensor(pose, dtype=torch.float32))
 
-        return image, torch.tensor(pose, dtype=torch.float32)
+        self.loaded_items_cache[index] = data
+
+        return data
 
 
 class SequenceGraphDataset(dataset.Dataset):
@@ -103,26 +113,33 @@ class SequenceGraphDataset(dataset.Dataset):
         nodes.append(node)
         y.append(label)
 
-        # add edges, unidirected, all nodes are connected to each other
+        # add edges, first node connected to second and third, second to third and fourth, etc.
         edge_index = []
-        for i in range(len(nodes)):
-            for j in range(len(nodes)):
-                if i != j:
-                    edge_index.append([i, j])
+        for i in range(self.graph_length - 2):
+            edge_index.append([i, i + 1])
+            edge_index.append(
+                [i, i + 2]
+            )  # Add this line to connect the first node to the next two nodes
+
+        # add the last edge
+        edge_index.append([self.graph_length - 2, self.graph_length - 1])
+        edge_index.append([self.graph_length - 2, self.graph_length - 3])
 
         edge_index = torch.tensor(edge_index, dtype=torch.long).t().contiguous()
         nodes = torch.stack(nodes)
         y = torch.stack(y)
 
-        if self.transform:
-            nodes, edge_index, y = self.transform(nodes, edge_index, y)
+        data = Data(x=nodes, edge_index=edge_index, y=y)
+        if self.transform is not None:
+            data = self.transform(data)
 
-        return Data(x=nodes, edge_index=edge_index, y=y)
+        return data
 
     def __len__(self):
         return self.dataset.__len__() - self.graph_length
 
 
+# TODO: use torch.utils.data.ConcatDataset
 class MultipleSequenceGraphDataset(dataset.Dataset):
     def __init__(
         self,
@@ -145,6 +162,7 @@ class MultipleSequenceGraphDataset(dataset.Dataset):
         while index >= len(self.datasets[dataset_index]):
             index -= len(self.datasets[dataset_index])
             dataset_index += 1
+
         return self.datasets[dataset_index][index]
 
     def __len__(self):
