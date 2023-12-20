@@ -7,7 +7,11 @@ from tqdm import tqdm
 import matplotlib.pyplot as plt
 import numpy as np
 
-from dataset import KittiSequenceDataset, MultipleSequenceGraphDataset, SequenceGraphDataset
+from dataset import (
+    KittiSequenceDataset,
+    MultipleSequenceGraphDataset,
+    SequenceGraphDataset,
+)
 from loss import AllNodesLoss, JustLastNodeLoss
 from model import GraphVO
 
@@ -51,7 +55,9 @@ def train(
                 os.path.join(save_dir, f"model_{epoch}_{batch_idx}.pth"),
             )
     if save_model:
-        torch.save(model.state_dict(), os.path.join(save_dir, f"model_after_{epoch}.pth"))
+        torch.save(
+            model.state_dict(), os.path.join(save_dir, f"model_after_{epoch}.pth")
+        )
     print(f"Train Epoch {epoch}: {np.mean(loss_list)}")
     return model
 
@@ -91,7 +97,7 @@ transform = T.Compose(
         ResetToFirstNode(),
         T.RemoveDuplicatedEdges(),
         T.ToUndirected(),
-        T.VirtualNode(),
+        # T.VirtualNode(),
     ]
 )
 
@@ -107,19 +113,6 @@ train_dataloader = DataLoader(
     batch_size=BATCH_SIZE,
     num_workers=0 if __debug__ else 14,
 )
-
-plt.figure()
-for i in range(10):
-    # get random sample from dataset
-    data = train_dataset[np.random.randint(len(train_dataset))]
-    plt.plot(data.y[:, 0], data.y[:, 2], label=f"Sample {i}")
-    plt.scatter(data.y[:, 0], data.y[:, 2], s=1)
-plt.xlabel("x")
-plt.ylabel("z")
-plt.legend()
-plt.show()
-
-exit()
 
 eval_dataset = SequenceGraphDataset(
     base_dataset=KittiSequenceDataset(basedir_kitti, "05"),
@@ -148,7 +141,7 @@ optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
 EPOCHS = 100
 SAVE_MODEL = True
 SAVE_INTERVAL = 100
-SAVE_DIR = "models_euler"
+SAVE_DIR = "models_proper_rotation"
 os.makedirs(SAVE_DIR, exist_ok=True)
 
 for epoch in range(1, EPOCHS + 1):

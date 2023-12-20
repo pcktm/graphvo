@@ -17,7 +17,7 @@ from model import GraphVO
 
 from torch_geometric.utils import dropout_edge, dropout_node
 
-from utils import ResetToFirstNode
+from utils import ResetToFirstNode, create_global_path, integrate_motion
 
 import matplotlib.pyplot as plt
 
@@ -83,14 +83,14 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device {device}")
 
 model = GraphVO().to(device)
-state = torch.load("./models_euler/model_after_6.pth")
+state = torch.load("./models_proper_rotation/model_after_10.pth")
 model.load_state_dict(state)
 model.eval()
 
 USE_FILE = True
 
 if not USE_FILE or not os.path.exists("data/predicted.npy"):
-    predicted, ground_truth = test(model, eval_dataloader, device, -2)
+    predicted, ground_truth = test(model, eval_dataloader, device)
     np.save("data/predicted.npy", np.array(predicted))
     np.save("data/ground_truth.npy", np.array(ground_truth))
     predicted = np.array(predicted)
@@ -99,47 +99,23 @@ else:
     predicted = np.load("data/predicted.npy")
     ground_truth = np.load("data/ground_truth.npy")
 
-# now, it is an array of shape (num_samples, 6)
-# i want to plot just the ground truth to validate the graphs\
-# importantly its in x, y, z, a, b, c format where y is the height so I don't care for it in 2d odometry plots
-# a, b, c are euler angles
+ground_truth = ground_truth[:, :-1]
+predicted = predicted[:, :-1]
 
+integrated_gt = create_global_path(ground_truth)
+integrated_predicted = create_global_path(predicted)
 
-# plt.plot(ground_truth[:, 0], ground_truth[:, 2], label="ground truth")
-# now, predicted has to be odometried, by summing up the relative rotations and positions
-def integrate_movement(node_positions):
-    positions = node_positions[:, :3]
-    rotations = node_positions[:, 3:]
-    integrated_positions = np.zeros_like(positions)
-    integrated_rotations = np.zeros_like(rotations)
-
-    for i in range(len(positions)):
-        if i == 0:
-            integrated_positions[i] = positions[i]
-            integrated_rotations[i] = rotations[i]
-        else:
-            prev_rot = integrated_rotations[i - 1]
-            rotation_matrix = R.from_euler("xyz", prev_rot).as_matrix()
-
-            # Apply the relative rotation to the current position
-            relative_rot_position = rotation_matrix.dot(positions[i])
-
-            # Add the odometry adjusted position to previous position
-            integrated_positions[i] = (
-                integrated_positions[i - 1] + relative_rot_position
-            )
-
-            # Add the relative rotation to the previous rotation
-            integrated_rotations[i] = integrated_rotations[i - 1] + rotations[i]
-
-    return np.concatenate((integrated_positions, integrated_rotations), axis=1)
-
-integrated_gt = integrate_movement(ground_truth)
-integrated_predicted = integrate_movement(predicted)
-
-# plot just the positions of ground truth and predicted
 plt.figure()
 plt.plot(integrated_gt[:, 0], integrated_gt[:, 2], label="ground truth")
-plt.plot(integrated_predicted[:, 0], integrated_predicted[:, 2], label="predicted")
-plt.legend()
+# plt.plot(integrated_predicted[:, 0], integrated_predicted[:, 2], label="predicted")
 plt.show()
+
+# integrated_gt = integrate_motion(ground_truth)
+# integrated_predicted = integrate_motion(predicted)
+
+# # plot just the positions of ground truth and predicted
+# plt.figure()
+# plt.plot(integrated_gt[:, 0], integrated_gt[:, 2], label="ground truth")
+# plt.plot(integrated_predicted[:, 0], integrated_predicted[:, 2], label="predicted")
+# plt.legend()
+# plt.show()
