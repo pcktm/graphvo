@@ -55,86 +55,66 @@ class ResetToFirstNode(BaseTransform):
         return data
 
 
-def integrate_motion(data):
-    # Assume data shape is [num_samples, 6], where [:, :3] are positions and [:, 3:] are Euler angles
-    positions = data[:, :3]
-    rotations = data[:, 3:]
+@functional_transform("relative_shift")
+class RelativeShift(BaseTransform):
+    def __init__(self) -> None:
+        super().__init__()
 
-    # Prepare containers for new positions and rotations, copy first samples
-    new_positions = np.empty_like(positions)
-    new_rotations = np.empty_like(rotations)
-    new_positions[0] = positions[0]
-    new_rotations[0] = rotations[0]
+    def forward(self, data: Union[Data, HeteroData]) -> Union[Data, HeteroData]:
+        for store in data.stores:
+            if "y" in store:
+                y = store.y.detach().numpy()
 
-    # Convert rotations to matrices for convenient computations
-    rotation_matrices = np.array(
-        [R.from_euler("xyz", euler_angles).as_matrix() for euler_angles in rotations]
-    )
+                positions = y[:, :3]
+                rotations = y[:, 3:].reshape(-1, 3, 3)
 
-    # Apply accumulated transformations for each subsequent sample
-    for i in range(1, data.shape[0]):
-        # Calculate new position by rotating and translating the old one
-        new_positions[i] = (
-            new_positions[i - 1] + rotation_matrices[i - 1] @ positions[i]
-        )
+                rel_positions = np.zeros_like(positions)
+                rel_rotations = np.zeros_like(rotations)
 
-        # Calculate new rotation by multiplying old rotation with the new one
-        new_rotations[i] = R.from_matrix(
-            rotation_matrices[i - 1] @ rotation_matrices[i]
-        ).as_euler("xyz")
+                for i in range(1, positions.shape[0]):
+                    prev_position = positions[i - 1]
+                    prev_rotation = rotations[i - 1]
+                    curr_position = positions[i]
+                    curr_rotation = rotations[i]
 
-    # Concatenate and return new positions and rotations
-    return np.hstack((new_positions, new_rotations))
+                    rel_positions[i] = curr_position - prev_position
+                    rel_rotations[i] = np.dot(prev_rotation.T, curr_rotation)
+
+                rel_positions = torch.from_numpy(rel_positions).float()
+                rel_rotations = torch.from_numpy(
+                    np.stack([R.from_matrix(r).as_euler("xyz") for r in rel_rotations])
+                ).float()
+
+                store.y = torch.cat((rel_positions, rel_rotations), dim=1)
+        return data
 
 
-def create_global_path(outputs, node_idx=9):
-    # Extract specified node from across all graphs
-    nodes = outputs[:, node_idx, :]
+@functional_transform("normalize_kitti_pose")
+class NormalizeKITTIPose(BaseTransform):
+    def __init__(self) -> None:
+        super().__init__()
+        # Values taken from https://github.com/aofrancani/TSformer-VO/blob/main/datasets/kitti.py
+        self.mean_angles = np.array([1.7061e-5, 9.5582e-4, -5.5258e-5])
+        self.std_angles = np.array([2.8256e-3, 1.7771e-2, 3.2326e-3])
+        self.mean_t = np.array([-8.6736e-5, -1.6038e-2, 9.0033e-1])
+        self.std_t = np.array([2.5584e-2, 1.8545e-2, 3.0352e-1])
 
-    num_nodes = len(nodes)
+    def forward(self, data: Union[Data, HeteroData]) -> Union[Data, HeteroData]:
+        for store in data.stores:
+            if "y" in store:
+                y = store.y.detach().numpy()
 
-    # Initialize the first pose
-    global_node_poses = np.zeros((num_nodes, 6))
-    global_node_poses[0] = nodes[0]
+                positions = y[:, :3]
+                rotations = y[:, 3:].reshape(-1, 3, 3)
+                angles = np.stack([R.from_matrix(r).as_euler("zxy") for r in rotations])
 
-    for i in range(1, num_nodes):
-        if i == 1:
-            prev_global_pose = global_node_poses[i - 1]
+                angles = (angles - self.mean_angles) / self.std_angles
+                positions = (positions - self.mean_t) / self.std_t
 
-            # Compute previous global rotation matrix
-            prev_global_rotation_matrix = R.from_euler(
-                "xyz", prev_global_pose[3:]
-            ).as_matrix()
+                angles = np.stack([R.from_euler("zxy", a).as_matrix().flatten() for a in angles])
 
-            # update the global position
-            global_node_poses[i, :3] = prev_global_pose[:3] + (
-                prev_global_rotation_matrix @ nodes[i, :3]
-            )
+                positions = torch.from_numpy(positions).float()
+                angles = torch.from_numpy(angles).float()
 
-            # update the global rotation
-            local_rotation_matrix = R.from_euler("xyz", nodes[i, 3:]).as_matrix()
-            global_rotation_matrix = prev_global_rotation_matrix @ local_rotation_matrix
-
-        else:
-            direction_vector = (
-                global_node_poses[i - 1, :3] - global_node_poses[i - 2, :3]
-            )
-            direction_angle = np.arctan2(direction_vector[2], direction_vector[0])
-
-            # Apply rotation along y-axis to align direction vector with x-axis
-            rot_mat = R.from_euler("y", -direction_angle).as_matrix()
-
-            # update the global position to move along the previous direction vector
-            global_node_poses[i, :3] = (
-                global_node_poses[i - 1, :3] + rot_mat @ nodes[i, :3]
-            )
-
-            # update the global rotation
-            local_rotation_matrix = R.from_euler("xyz", nodes[i, 3:]).as_matrix()
-            global_rotation_matrix = (
-                rot_mat @ prev_global_rotation_matrix @ local_rotation_matrix
-            )
-
-        global_node_poses[i, 3:] = R.from_matrix(global_rotation_matrix).as_euler("xyz")
-
-    return global_node_poses
+                store.y = torch.cat((positions, angles), dim=1)
+        return data

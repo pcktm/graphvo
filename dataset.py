@@ -90,13 +90,16 @@ class SequenceGraphDataset(dataset.Dataset):
         self.graph_length = graph_length
         self.transform = transform
 
-    def __getitem__(self, index):
+    def __getitem__(self, index: int | torch.Tensor | slice):
         """
         Returns a graph of length self.graph_length, constructed by taking the frame at index as the last node
         and the previous self.graph_length frames as leading nodes.
         """
         if torch.is_tensor(index):
             index = index.tolist()
+
+        if isinstance(index, slice):
+            return [self[i] for i in range(*index.indices(len(self)))]
 
         nodes = []
         y = []
@@ -154,7 +157,12 @@ class MultipleSequenceGraphDataset(dataset.Dataset):
             for sequence in sequences
         ]
 
-    def __getitem__(self, index):
+    def __getitem__(self, index: int | torch.Tensor | slice):
+        if torch.is_tensor(index):
+            index = index.tolist()
+
+        if isinstance(index, slice):
+            return [self[i] for i in range(*index.indices(len(self)))]
         # find the dataset that contains the index and remember that index in that dataset should be local
         dataset_index = 0
         while index >= len(self.datasets[dataset_index]):

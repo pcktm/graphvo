@@ -12,10 +12,10 @@ from dataset import (
     MultipleSequenceGraphDataset,
     SequenceGraphDataset,
 )
-from loss import AllNodesLoss, JustLastNodeLoss
+from loss import AllNodesLoss, JustLastNodeLoss, LastNodeShiftLoss
 from model import GraphVO
 
-from utils import ResetToFirstNode
+from utils import NormalizeKITTIPose, RelativeShift, ResetToFirstNode
 
 import matplotlib.pyplot as plt
 
@@ -94,14 +94,15 @@ train_kitti_datasets = [
 
 transform = T.Compose(
     [
-        ResetToFirstNode(),
+        NormalizeKITTIPose(),
+        RelativeShift(),
         T.RemoveDuplicatedEdges(),
         T.ToUndirected(),
-        # T.VirtualNode(),
+        T.VirtualNode(),
     ]
 )
 
-GRAPH_LENGTH = 16
+GRAPH_LENGTH = 10
 BATCH_SIZE = 64
 
 train_dataset = MultipleSequenceGraphDataset(
@@ -136,12 +137,13 @@ model = GraphVO().to(device)
 # ).to(device)
 
 criterion = AllNodesLoss(alpha=20).to(device)
+# criterion = LastNodeShiftLoss(alpha=20, batch_size=BATCH_SIZE, graph_length=GRAPH_LENGTH).to(device)
 optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
 
 EPOCHS = 100
 SAVE_MODEL = True
 SAVE_INTERVAL = 100
-SAVE_DIR = "models_proper_rotation"
+SAVE_DIR = "models_relative_shift"
 os.makedirs(SAVE_DIR, exist_ok=True)
 
 for epoch in range(1, EPOCHS + 1):

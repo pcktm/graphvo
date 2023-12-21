@@ -3,6 +3,4 @@ venv
 models
 __pycache__
 data
-models_reset_to_first_node
-models_euler
-models_proper_rotation
+models_*

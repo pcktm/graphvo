@@ -17,7 +17,7 @@ from model import GraphVO
 
 from torch_geometric.utils import dropout_edge, dropout_node
 
-from utils import ResetToFirstNode, create_global_path, integrate_motion
+from utils import NormalizeKITTIPose, RelativeShift, ResetToFirstNode
 
 import matplotlib.pyplot as plt
 
@@ -29,6 +29,7 @@ def test(
     node_selector=None,
 ):
     model.eval()
+    # every_16th_graph = test_loader.dataset[::16]
     progress_bar = tqdm(test_loader, desc=f"Test", total=len(test_loader))
     predicted = []
     ground_truth = []
@@ -46,25 +47,18 @@ def test(
 
 os.makedirs("data", exist_ok=True)
 basedir_kitti = "/home/pcktm/inzynierka/kitti/dataset"
-train_sequences_kitti = ["00", "02", "08", "09"]
-train_kitti_datasets = [
-    KittiSequenceDataset(
-        basedir_kitti,
-        sequence_name,
-    )
-    for sequence_name in train_sequences_kitti
-]
 
 transform = T.Compose(
     [
-        ResetToFirstNode(),
+        NormalizeKITTIPose(),
+        RelativeShift(),
         T.RemoveDuplicatedEdges(),
         T.ToUndirected(),
         T.VirtualNode(),
     ]
 )
 
-GRAPH_LENGTH = 16
+GRAPH_LENGTH = 10
 BATCH_SIZE = 1
 
 eval_dataset = SequenceGraphDataset(
@@ -83,7 +77,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device {device}")
 
 model = GraphVO().to(device)
-state = torch.load("./models_proper_rotation/model_after_10.pth")
+state = torch.load("./models_relative_shift/model_after_5.pth")
 model.load_state_dict(state)
 model.eval()
 
@@ -99,23 +93,24 @@ else:
     predicted = np.load("data/predicted.npy")
     ground_truth = np.load("data/ground_truth.npy")
 
-ground_truth = ground_truth[:, :-1]
-predicted = predicted[:, :-1]
+# from each graph select second node
+node_idx = 7
+gt_2 = ground_truth[:, node_idx]
+integrated_gt = np.zeros_like(gt_2)
+predicted_2 = predicted[:, node_idx]
+integrated_predicted = np.zeros_like(predicted_2)
 
-integrated_gt = create_global_path(ground_truth)
-integrated_predicted = create_global_path(predicted)
+for i in range(1, gt_2.shape[0]):
+    integrated_gt[i] = integrated_gt[i - 1] + gt_2[i]
+    integrated_predicted[i] = integrated_predicted[i - 1] + predicted_2[i]
 
 plt.figure()
+# plt.axes().set_aspect('equal', 'datalim')
 plt.plot(integrated_gt[:, 0], integrated_gt[:, 2], label="ground truth")
-# plt.plot(integrated_predicted[:, 0], integrated_predicted[:, 2], label="predicted")
+plt.plot(integrated_predicted[:, 0], integrated_predicted[:, 2], label="predicted")
+
+#plot lines between points in gt and predicted
+for i in range(0, gt_2.shape[0], 10):
+    plt.plot([integrated_gt[i, 0], integrated_predicted[i, 0]], [integrated_gt[i, 2], integrated_predicted[i, 2]], 'g', lw=0.1)
+
 plt.show()
-
-# integrated_gt = integrate_motion(ground_truth)
-# integrated_predicted = integrate_motion(predicted)
-
-# # plot just the positions of ground truth and predicted
-# plt.figure()
-# plt.plot(integrated_gt[:, 0], integrated_gt[:, 2], label="ground truth")
-# plt.plot(integrated_predicted[:, 0], integrated_predicted[:, 2], label="predicted")
-# plt.legend()
-# plt.show()
