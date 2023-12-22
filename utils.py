@@ -88,7 +88,6 @@ class RelativeShift(BaseTransform):
                 store.y = torch.cat((rel_positions, rel_rotations), dim=1)
         return data
 
-
 @functional_transform("normalize_kitti_pose")
 class NormalizeKITTIPose(BaseTransform):
     def __init__(self) -> None:

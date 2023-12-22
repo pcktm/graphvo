@@ -1,5 +1,6 @@
 import os
 from torch_geometric.loader import DataLoader
+import torch_geometric
 from scipy.spatial.transform import Rotation as R
 import torch_geometric.transforms as T
 import torch
@@ -52,18 +53,21 @@ transform = T.Compose(
     [
         NormalizeKITTIPose(),
         RelativeShift(),
-        T.RemoveDuplicatedEdges(),
         T.ToUndirected(),
+        T.AddRemainingSelfLoops(),
+        T.RemoveDuplicatedEdges(),
+        T.GDC(),
         T.VirtualNode(),
     ]
 )
 
-GRAPH_LENGTH = 10
+GRAPH_LENGTH = 24
 BATCH_SIZE = 1
 
 eval_dataset = SequenceGraphDataset(
     base_dataset=KittiSequenceDataset(basedir_kitti, "05"),
     graph_length=GRAPH_LENGTH,
+    stride=7,
     transform=transform,
 )
 
@@ -77,11 +81,11 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device {device}")
 
 model = GraphVO().to(device)
-state = torch.load("./models_relative_shift/model_after_5.pth")
+state = torch.load("./models_bitm_features_lg_stride/model_after_85.pth")
 model.load_state_dict(state)
 model.eval()
 
-USE_FILE = True
+USE_FILE = False
 
 if not USE_FILE or not os.path.exists("data/predicted.npy"):
     predicted, ground_truth = test(model, eval_dataloader, device)
@@ -94,23 +98,33 @@ else:
     ground_truth = np.load("data/ground_truth.npy")
 
 # from each graph select second node
-node_idx = 7
+node_idx = 12
 gt_2 = ground_truth[:, node_idx]
 integrated_gt = np.zeros_like(gt_2)
 predicted_2 = predicted[:, node_idx]
 integrated_predicted = np.zeros_like(predicted_2)
 
+ip_3 = np.zeros_like(predicted_2)
+
 for i in range(1, gt_2.shape[0]):
     integrated_gt[i] = integrated_gt[i - 1] + gt_2[i]
     integrated_predicted[i] = integrated_predicted[i - 1] + predicted_2[i]
+    ip_3[i] = ip_3[i - 1] + predicted[:, 3][i]
 
 plt.figure()
 # plt.axes().set_aspect('equal', 'datalim')
 plt.plot(integrated_gt[:, 0], integrated_gt[:, 2], label="ground truth")
 plt.plot(integrated_predicted[:, 0], integrated_predicted[:, 2], label="predicted")
+plt.plot(ip_3[:, 0], ip_3[:, 2], label="predicted 3")
 
-#plot lines between points in gt and predicted
+# plot lines between points in gt and predicted
 for i in range(0, gt_2.shape[0], 10):
-    plt.plot([integrated_gt[i, 0], integrated_predicted[i, 0]], [integrated_gt[i, 2], integrated_predicted[i, 2]], 'g', lw=0.1)
+    plt.plot(
+        [integrated_gt[i, 0], integrated_predicted[i, 0]],
+        [integrated_gt[i, 2], integrated_predicted[i, 2]],
+        "g",
+        lw=0.1,
+    )
 
+plt.legend()
 plt.show()

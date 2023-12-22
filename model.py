@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch_geometric.nn import GraphConv, GATv2Conv
+from torch_geometric.nn import GraphConv, GATv2Conv, SoftmaxAggregation
 
 
 def conv(in_channels, out_channels, kernel_size=3, stride=1, padding=1, dropout=0):
@@ -20,7 +20,7 @@ class ExtractFeatures(nn.Module):
         if self.use_pooling:
             self.pool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
 
-        self.conv1 = conv(3, 64, kernel_size=7, stride=2, padding=3)
+        self.conv1 = conv(1, 64, kernel_size=7, stride=2, padding=3)
         self.conv2 = conv(64, 128, kernel_size=5, stride=2, padding=2)
         self.conv3 = conv(128, 256, kernel_size=5, stride=2, padding=2)
         self.conv3_1 = conv(256, 256, kernel_size=3, stride=1, padding=1)
@@ -56,6 +56,7 @@ class ExtractFeatures(nn.Module):
 class GraphConvolution(nn.Module):
     def __init__(self, dropout=0):
         super(GraphConvolution, self).__init__()
+        self.conv0 = GraphConv(2049, 1024, aggr="softmax")
         self.conv1 = GraphConv(1024, 512)
         self.conv2 = GraphConv(512, 128)
         self.conv3 = GraphConv(128, 64)
@@ -66,10 +67,11 @@ class GraphConvolution(nn.Module):
         self.rotation = nn.Linear(64, 3)
 
     def forward(self, x, edge_index):
+        x = F.leaky_relu(self.conv0(x, edge_index))
+        x = self.dropout(x)
         x = F.leaky_relu(self.conv1(x, edge_index))
         x = self.dropout(x)
         x = F.leaky_relu(self.conv2(x, edge_index))
-        x = self.dropout(x)
         x = F.leaky_relu(self.conv3(x, edge_index))
 
         position = self.position(x)
@@ -83,15 +85,11 @@ class GraphConvolution(nn.Module):
 class GraphVO(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.extract_features = ExtractFeatures()
+        # self.extract_features = ExtractFeatures()
         self.graph_convolution = GraphConvolution()
 
     def forward(self, x, edge_index):
         # from each image extract features and replace the image with the features
-        # x is of shape (batch_size * graph_length, 3, 64, 64)
-        x = x.view(-1, 3, 64, 64)
-        x = self.extract_features(x)
-        x = x.view(-1, 1024)
 
         # run graph convolution
         x = self.graph_convolution(x, edge_index)

@@ -50,11 +50,11 @@ class LastNodeShiftLoss(torch.nn.Module):
         target = target.view(-1, self.graph_length, 6)
 
         # Get the last nodes for each element in the batch
-        last_pred = pred[:, -2, :]
-        last_target = target[:, -2, :]
+        last_pred = pred[:, -1, :]
+        last_target = target[:, -1, :]
 
-        second_last_pred = pred[:, -3, :]
-        second_last_target = target[:, -3, :]
+        second_last_pred = pred[:, -2, :]
+        second_last_target = target[:, -2, :]
 
         position_pred = last_pred[:, :3]
         position_target = last_target[:, :3]

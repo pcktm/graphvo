@@ -1,5 +1,5 @@
 import os
-from torch_geometric.loader import DataLoader
+from torch_geometric.loader import DataLoader, CachedLoader
 from scipy.spatial.transform import Rotation as R
 import torch_geometric.transforms as T
 import torch
@@ -9,7 +9,6 @@ import numpy as np
 
 from dataset import (
     KittiSequenceDataset,
-    MultipleSequenceGraphDataset,
     SequenceGraphDataset,
 )
 from loss import AllNodesLoss, JustLastNodeLoss, LastNodeShiftLoss
@@ -18,6 +17,9 @@ from model import GraphVO
 from utils import NormalizeKITTIPose, RelativeShift, ResetToFirstNode
 
 import matplotlib.pyplot as plt
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(f"Using device {device}")
 
 
 def train(
@@ -96,23 +98,33 @@ transform = T.Compose(
     [
         NormalizeKITTIPose(),
         RelativeShift(),
-        T.RemoveDuplicatedEdges(),
         T.ToUndirected(),
+        T.AddRemainingSelfLoops(),
+        T.RemoveDuplicatedEdges(),
+        T.GDC(),
         T.VirtualNode(),
     ]
 )
 
-GRAPH_LENGTH = 10
-BATCH_SIZE = 64
+GRAPH_LENGTH = 8
+BATCH_SIZE = 128
 
-train_dataset = MultipleSequenceGraphDataset(
-    train_kitti_datasets, graph_length=GRAPH_LENGTH, transform=transform
-)
+graph_datasets = [
+    SequenceGraphDataset(
+        train_kitti_dataset,
+        stride=stride,
+        transform=transform,
+        graph_length=GRAPH_LENGTH,
+    )
+    for train_kitti_dataset in train_kitti_datasets
+    for stride in [8, 13, 21]
+]
 
 train_dataloader = DataLoader(
-    train_dataset,
+    torch.utils.data.ConcatDataset(graph_datasets),
     batch_size=BATCH_SIZE,
     num_workers=0 if __debug__ else 14,
+    shuffle=True,
 )
 
 eval_dataset = SequenceGraphDataset(
@@ -127,23 +139,20 @@ eval_dataloader = DataLoader(
     num_workers=0 if __debug__ else 14,
 )
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print(f"Using device {device}")
-
 model = GraphVO().to(device)
 
 # criterion = JustLastNodeLoss(
 #     alpha=20, batch_size=BATCH_SIZE, graph_length=GRAPH_LENGTH
 # ).to(device)
 
-criterion = AllNodesLoss(alpha=20).to(device)
+criterion = AllNodesLoss(alpha=0.8).to(device)
 # criterion = LastNodeShiftLoss(alpha=20, batch_size=BATCH_SIZE, graph_length=GRAPH_LENGTH).to(device)
 optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
 
 EPOCHS = 100
 SAVE_MODEL = True
 SAVE_INTERVAL = 100
-SAVE_DIR = "models_relative_shift"
+SAVE_DIR = "models_bitm_features_lg_stride"
 os.makedirs(SAVE_DIR, exist_ok=True)
 
 for epoch in range(1, EPOCHS + 1):

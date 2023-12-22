@@ -6,6 +6,7 @@ import pykitti
 import numpy as np
 from typing import Union, List
 from torchvision.transforms import v2 as tv2
+import os
 
 
 class KittiSequenceDataset(dataset.Dataset):
@@ -31,14 +32,29 @@ class KittiSequenceDataset(dataset.Dataset):
         self.default_transform = tv2.Compose(
             [
                 tv2.PILToTensor(),
+                tv2.Grayscale(num_output_channels=1),
                 tv2.Resize(size=(64, 64), antialias=True),
                 tv2.ToDtype(torch.float32, scale=True),
             ]
         )
+        self.features = self.load_features()
+        print(self.features.shape)
         self.loaded_items_cache = {}
 
     def __len__(self):
         return self.num_samples
+    
+    def load_features(self):
+        features = []
+        for i in range(self.num_samples):
+            path = os.path.join("./data", "features_kitti_bitm", self.sequence_name, f"{i}.npy")
+            if os.path.exists(path):
+                features.append(np.load(path))
+            else:
+                features.append(None)
+                print(f"File {path} does not exist")
+        return np.array(features)
+
 
     def __getitem__(self, index: int | torch.Tensor | slice):
         if torch.is_tensor(index):
@@ -52,12 +68,24 @@ class KittiSequenceDataset(dataset.Dataset):
         if index in self.loaded_items_cache:
             return self.loaded_items_cache[index]
 
-        image = self.sequence.get_cam2(index) if self.load_images else None
-        image = self.default_transform(image) if image is not None else None
+        # image = self.sequence.get_cam2(index) if self.load_images else None
+        # image = self.default_transform(image) if image is not None else None
+
+        features = self.features[index]
 
         try:
             pose = self.sequence.poses[index]
             pose = np.concatenate([pose[:3, 3], pose[:3, :3].ravel()])
+            # rotate the entire sequence so that the first node is at the origin
+            first = self.sequence.poses[0]
+            first_position = first[:3, 3]
+            first_rotation = first[:3, :3]
+            position = pose[:3]
+            rotation = pose[3:].reshape(3, 3)
+            # rotation also has to be applied to the position
+            position = np.dot(first_rotation.T, position - first_position)
+            rotation = np.dot(first_rotation.T, rotation)
+            pose = np.concatenate([position, rotation.ravel()])
         except IndexError as e:
             print(f"Index {index} out of range for sequence {self.sequence_name}")
             raise e
@@ -70,8 +98,8 @@ class KittiSequenceDataset(dataset.Dataset):
 
         if self.return_rich_sample:
             return image, pose, self.timestamps[index]
-        
-        data = (image, torch.tensor(pose, dtype=torch.float32))
+
+        data = (torch.tensor(features, dtype=torch.float32), torch.tensor(pose, dtype=torch.float32))
 
         self.loaded_items_cache[index] = data
 
@@ -83,12 +111,14 @@ class SequenceGraphDataset(dataset.Dataset):
         self,
         base_dataset: KittiSequenceDataset,
         graph_length=5,
+        stride=1,
         transform=None,
     ) -> None:
         super().__init__()
         self.dataset = base_dataset
         self.graph_length = graph_length
         self.transform = transform
+        self.stride = stride
 
     def __getitem__(self, index: int | torch.Tensor | slice):
         """
@@ -105,30 +135,39 @@ class SequenceGraphDataset(dataset.Dataset):
         y = []
 
         for i in range(self.graph_length - 1):
-            node, label = self.dataset[index + i]
+            node, label = self.dataset[index + i * self.stride]
             nodes.append(node)
             y.append(label)
 
         # add the last node
-        node, label = self.dataset[index + self.graph_length]
+        node, label = self.dataset[index + (self.graph_length - 1) * self.stride]
         nodes.append(node)
         y.append(label)
 
-        # add edges, first node connected to second and third, second to third and fourth, etc.
+        # add edges, each connected to the next two nodes
         edge_index = []
         for i in range(self.graph_length - 2):
             edge_index.append([i, i + 1])
-            edge_index.append(
-                [i, i + 2]
-            )  # Add this line to connect the first node to the next two nodes
+            edge_index.append([i, i + 2])
 
         # add the last edge
         edge_index.append([self.graph_length - 2, self.graph_length - 1])
-        edge_index.append([self.graph_length - 2, self.graph_length - 3])
 
         edge_index = torch.tensor(edge_index, dtype=torch.long).t().contiguous()
         nodes = torch.stack(nodes)
         y = torch.stack(y)
+
+        # to node data append the node index, with stride
+        nodes = torch.cat(
+            (
+                nodes,
+                torch.tensor(
+                    [i * self.stride for i in range(self.graph_length)],
+                    dtype=torch.float32,
+                ).unsqueeze(1),
+            ),
+            dim=1,
+        )
 
         data = Data(x=nodes, edge_index=edge_index, y=y)
         if self.transform is not None:
@@ -137,7 +176,7 @@ class SequenceGraphDataset(dataset.Dataset):
         return data
 
     def __len__(self):
-        return self.dataset.__len__() - self.graph_length
+        return self.dataset.__len__() - (self.graph_length - 1) * self.stride
 
 
 # TODO: use torch.utils.data.ConcatDataset
@@ -173,3 +212,27 @@ class MultipleSequenceGraphDataset(dataset.Dataset):
 
     def __len__(self):
         return sum([len(dataset) for dataset in self.datasets])
+
+
+def WholeSequenceDataset(base_dataset: KittiSequenceDataset, transform=None):
+    nodes = []
+    y = []
+
+    for i in range(len(base_dataset)):
+        node, label = base_dataset[i]
+        nodes.append(node)
+        y.append(label)
+
+    edge_index = []
+    for i in range(len(base_dataset) - 1):
+        edge_index.append([i, i + 1])
+
+    edge_index = torch.tensor(edge_index, dtype=torch.long).t().contiguous()
+    nodes = torch.stack(nodes)
+    y = torch.stack(y)
+
+    data = Data(x=nodes, edge_index=edge_index, y=y)
+    if transform is not None:
+        data = transform(data)
+
+    return data
