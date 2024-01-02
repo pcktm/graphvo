@@ -97,17 +97,61 @@ train_kitti_datasets = [
 transform = T.Compose(
     [
         NormalizeKITTIPose(),
-        RelativeShift(),
+        ResetToFirstNode(),
+        # RelativeShift(),
         T.ToUndirected(),
         T.AddRemainingSelfLoops(),
         T.RemoveDuplicatedEdges(),
-        T.GDC(),
-        T.VirtualNode(),
+        # T.GDC(),
+        # T.VirtualNode(),
     ]
 )
 
 GRAPH_LENGTH = 8
 BATCH_SIZE = 128
+
+# dataset = 2
+
+# seq = SequenceGraphDataset(
+#     train_kitti_datasets[dataset],
+#     stride=15,
+#     transform=transform,
+#     graph_length=8,
+# )
+
+# seq_unnormalized = SequenceGraphDataset(
+#     train_kitti_datasets[dataset],
+#     stride=15,
+#     transform=None,
+#     graph_length=8,
+# )
+
+# # get five random graphs
+# idx = np.random.randint(0, len(seq) - 128, 5)
+# graphs = [seq[i] for i in idx]
+# graphs_unnormalized = [seq_unnormalized[i] for i in idx]
+# plt.figure(figsize=(10, 5))
+# for graph, graph_unnormalized, index in zip(graphs, graphs_unnormalized, idx):
+#     # set aspect ratio to 1
+#     plt.plot(
+#         graph_unnormalized.y[:, 0], graph_unnormalized.y[:, 2], label=f"Ścieżka {index}"
+#     )
+#     plt.plot(graph.y[:, 0], graph.y[:, 2], label=f"Ścieżka {index} (po transformacji)")
+#     # scatter beginnings of the graphs
+#     plt.scatter(graph.y[0, 0], graph.y[0, 2], c="black")
+#     plt.scatter(graph_unnormalized.y[0, 0], graph_unnormalized.y[0, 2], c="black")
+#     # show grid
+# plt.gca().set_aspect("equal")
+# plt.grid()
+# plt.tight_layout()
+# plt.legend()
+# plt.xlabel("x")
+# plt.ylabel("z")
+# # plt.title("Przekształcenie reset_to_first_node")
+# # plt.show()
+# # save to file
+# plt.savefig("reset_to_first_node.png")
+
 
 graph_datasets = [
     SequenceGraphDataset(
@@ -117,7 +161,7 @@ graph_datasets = [
         graph_length=GRAPH_LENGTH,
     )
     for train_kitti_dataset in train_kitti_datasets
-    for stride in [8, 13, 21]
+    for stride in [15]
 ]
 
 train_dataloader = DataLoader(
@@ -152,7 +196,7 @@ optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
 EPOCHS = 100
 SAVE_MODEL = True
 SAVE_INTERVAL = 100
-SAVE_DIR = "models_bitm_features_lg_stride"
+SAVE_DIR = "models_img_stride15"
 os.makedirs(SAVE_DIR, exist_ok=True)
 
 for epoch in range(1, EPOCHS + 1):

@@ -26,6 +26,7 @@ class ResetToFirstNode(BaseTransform):
                 first_position = positions[0]
                 second_position = positions[1]
                 direction_vector = second_position - first_position
+                direction_vector /= np.linalg.norm(direction_vector)
 
                 # calculate rotation matrix to align the first two points along the x-axis (East)
                 target_vector = np.array([1, 0, 0])
@@ -88,6 +89,7 @@ class RelativeShift(BaseTransform):
                 store.y = torch.cat((rel_positions, rel_rotations), dim=1)
         return data
 
+
 @functional_transform("normalize_kitti_pose")
 class NormalizeKITTIPose(BaseTransform):
     def __init__(self) -> None:
@@ -110,7 +112,9 @@ class NormalizeKITTIPose(BaseTransform):
                 angles = (angles - self.mean_angles) / self.std_angles
                 positions = (positions - self.mean_t) / self.std_t
 
-                angles = np.stack([R.from_euler("zxy", a).as_matrix().flatten() for a in angles])
+                angles = np.stack(
+                    [R.from_euler("zxy", a).as_matrix().flatten() for a in angles]
+                )
 
                 positions = torch.from_numpy(positions).float()
                 angles = torch.from_numpy(angles).float()

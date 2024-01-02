@@ -56,8 +56,7 @@ class ExtractFeatures(nn.Module):
 class GraphConvolution(nn.Module):
     def __init__(self, dropout=0):
         super(GraphConvolution, self).__init__()
-        self.conv0 = GraphConv(2049, 1024, aggr="softmax")
-        self.conv1 = GraphConv(1024, 512)
+        self.conv1 = GraphConv(1024, 512, aggr="softmax")
         self.conv2 = GraphConv(512, 128)
         self.conv3 = GraphConv(128, 64)
 
@@ -67,7 +66,6 @@ class GraphConvolution(nn.Module):
         self.rotation = nn.Linear(64, 3)
 
     def forward(self, x, edge_index):
-        x = F.leaky_relu(self.conv0(x, edge_index))
         x = self.dropout(x)
         x = F.leaky_relu(self.conv1(x, edge_index))
         x = self.dropout(x)
@@ -85,12 +83,15 @@ class GraphConvolution(nn.Module):
 class GraphVO(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        # self.extract_features = ExtractFeatures()
-        self.graph_convolution = GraphConvolution()
+        # initially the input is 64x64 images, use standard GraphConv, not my custom module
+        self.extract_features = ExtractFeatures()
+        self.graph_convolution = GraphConvolution(dropout=0.4)
 
     def forward(self, x, edge_index):
         # from each image extract features and replace the image with the features
-
+        x = x.view(-1, 1, 64, 64)
+        x = self.extract_features(x)
+        x = x.view(-1, 1024)
         # run graph convolution
         x = self.graph_convolution(x, edge_index)
         return x

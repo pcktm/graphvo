@@ -61,7 +61,7 @@ transform = T.Compose(
     ]
 )
 
-GRAPH_LENGTH = 24
+GRAPH_LENGTH = 8
 BATCH_SIZE = 1
 
 eval_dataset = SequenceGraphDataset(
@@ -80,12 +80,13 @@ eval_dataloader = DataLoader(
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device {device}")
 
-model = GraphVO().to(device)
-state = torch.load("./models_bitm_features_lg_stride/model_after_85.pth")
+model = GraphVO()
+state = torch.load("./models_img_stride/model_after_56.pth")
 model.load_state_dict(state)
+model.to(device)
 model.eval()
 
-USE_FILE = False
+USE_FILE = True
 
 if not USE_FILE or not os.path.exists("data/predicted.npy"):
     predicted, ground_truth = test(model, eval_dataloader, device)
@@ -98,7 +99,7 @@ else:
     ground_truth = np.load("data/ground_truth.npy")
 
 # from each graph select second node
-node_idx = 12
+node_idx = 1
 gt_2 = ground_truth[:, node_idx]
 integrated_gt = np.zeros_like(gt_2)
 predicted_2 = predicted[:, node_idx]

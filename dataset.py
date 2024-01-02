@@ -37,8 +37,8 @@ class KittiSequenceDataset(dataset.Dataset):
                 tv2.ToDtype(torch.float32, scale=True),
             ]
         )
-        self.features = self.load_features()
-        print(self.features.shape)
+        # self.features = self.load_features()
+        # print(self.features.shape)
         self.loaded_items_cache = {}
 
     def __len__(self):
@@ -68,10 +68,10 @@ class KittiSequenceDataset(dataset.Dataset):
         if index in self.loaded_items_cache:
             return self.loaded_items_cache[index]
 
-        # image = self.sequence.get_cam2(index) if self.load_images else None
-        # image = self.default_transform(image) if image is not None else None
+        image = self.sequence.get_cam2(index) if self.load_images else None
+        image = self.default_transform(image) if image is not None else None
 
-        features = self.features[index]
+        # features = self.features[index]
 
         try:
             pose = self.sequence.poses[index]
@@ -99,7 +99,7 @@ class KittiSequenceDataset(dataset.Dataset):
         if self.return_rich_sample:
             return image, pose, self.timestamps[index]
 
-        data = (torch.tensor(features, dtype=torch.float32), torch.tensor(pose, dtype=torch.float32))
+        data = (image, torch.tensor(pose, dtype=torch.float32))
 
         self.loaded_items_cache[index] = data
 
@@ -156,18 +156,6 @@ class SequenceGraphDataset(dataset.Dataset):
         edge_index = torch.tensor(edge_index, dtype=torch.long).t().contiguous()
         nodes = torch.stack(nodes)
         y = torch.stack(y)
-
-        # to node data append the node index, with stride
-        nodes = torch.cat(
-            (
-                nodes,
-                torch.tensor(
-                    [i * self.stride for i in range(self.graph_length)],
-                    dtype=torch.float32,
-                ).unsqueeze(1),
-            ),
-            dim=1,
-        )
 
         data = Data(x=nodes, edge_index=edge_index, y=y)
         if self.transform is not None:
