@@ -96,7 +96,7 @@ class AllNodesLoss(torch.nn.Module):
         rotation_pred = pred[:, 3:]
         rotation_target = target[:, 3:]
 
-        position_loss = F.mse_loss(position_pred, position_target)
-        rotation_loss = F.mse_loss(rotation_pred, rotation_target)
+        position_loss = F.mse_loss(position_pred, position_target, reduction="mean")
+        rotation_loss = F.mse_loss(rotation_pred, rotation_target, reduction="mean")
 
         return position_loss + rotation_loss * self.alpha

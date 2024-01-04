@@ -78,12 +78,17 @@ class RelativeShift(BaseTransform):
                     curr_position = positions[i]
                     curr_rotation = rotations[i]
 
-                    rel_positions[i] = curr_position - prev_position
-                    rel_rotations[i] = np.dot(prev_rotation.T, curr_rotation)
+                    # calculate relative position and rotation
+                    rel_position = curr_position - prev_position
+                    rel_rotation = prev_rotation.T @ curr_rotation
+
+                    rel_positions[i] = rel_position                    
+                    rel_rotations[i] = rel_rotation
+
 
                 rel_positions = torch.from_numpy(rel_positions).float()
                 rel_rotations = torch.from_numpy(
-                    np.stack([R.from_matrix(r).as_euler("xyz") for r in rel_rotations])
+                    np.stack([R.from_matrix(r).as_quat() for r in rel_rotations])
                 ).float()
 
                 store.y = torch.cat((rel_positions, rel_rotations), dim=1)

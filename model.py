@@ -56,26 +56,29 @@ class ExtractFeatures(nn.Module):
 class GraphConvolution(nn.Module):
     def __init__(self, dropout=0):
         super(GraphConvolution, self).__init__()
-        self.conv1 = GraphConv(1024, 512, aggr="softmax")
+        self.conv1 = GraphConv(1025, 512, aggr="softmax")
         self.conv2 = GraphConv(512, 128)
-        self.conv3 = GraphConv(128, 64)
+        self.conv3 = GraphConv(129, 64)
 
         self.dropout = nn.Dropout(dropout)
 
-        self.position = nn.Linear(64, 3)
-        self.rotation = nn.Linear(64, 3)
+        self.position = nn.Linear(65, 3)
+        self.rotation = nn.Linear(65, 4) # quaternion
 
     def forward(self, x, edge_index):
+        node_index = x[:, -1].view(-1, 1)
         x = self.dropout(x)
         x = F.leaky_relu(self.conv1(x, edge_index))
         x = self.dropout(x)
         x = F.leaky_relu(self.conv2(x, edge_index))
+        x = torch.cat((x, node_index), dim=1)
         x = F.leaky_relu(self.conv3(x, edge_index))
-
+        
+        x = torch.cat((x, node_index), dim=1)
         position = self.position(x)
         rotation = self.rotation(x)
 
-        # rotation = F.normalize(rotation, p=2, dim=1)
+        rotation = F.normalize(rotation, dim=1)
 
         return torch.cat((position, rotation), dim=1)
 
@@ -92,6 +95,8 @@ class GraphVO(torch.nn.Module):
         x = x.view(-1, 1, 64, 64)
         x = self.extract_features(x)
         x = x.view(-1, 1024)
+        node_index = torch.arange(x.shape[0]).view(-1, 1).float().to(x.device)
+        x = torch.cat((x, node_index), dim=1)
         # run graph convolution
         x = self.graph_convolution(x, edge_index)
         return x

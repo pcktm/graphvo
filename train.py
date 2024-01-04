@@ -60,8 +60,7 @@ def train(
         torch.save(
             model.state_dict(), os.path.join(save_dir, f"model_after_{epoch}.pth")
         )
-    print(f"Train Epoch {epoch}: {np.mean(loss_list)}")
-    return model
+    return model, np.mean(loss_list)
 
 
 def evaluate(
@@ -84,7 +83,7 @@ def evaluate(
 
 
 os.makedirs("data", exist_ok=True)
-basedir_kitti = "/home/pcktm/inzynierka/kitti/dataset"
+basedir_kitti = "/home/pcktm/inzynierka/kitti/dataset_64px"
 train_sequences_kitti = ["00", "02", "08", "09"]
 train_kitti_datasets = [
     KittiSequenceDataset(
@@ -97,8 +96,8 @@ train_kitti_datasets = [
 transform = T.Compose(
     [
         NormalizeKITTIPose(),
-        ResetToFirstNode(),
-        # RelativeShift(),
+        # ResetToFirstNode(),
+        RelativeShift(),
         T.ToUndirected(),
         T.AddRemainingSelfLoops(),
         T.RemoveDuplicatedEdges(),
@@ -109,49 +108,6 @@ transform = T.Compose(
 
 GRAPH_LENGTH = 8
 BATCH_SIZE = 128
-
-# dataset = 2
-
-# seq = SequenceGraphDataset(
-#     train_kitti_datasets[dataset],
-#     stride=15,
-#     transform=transform,
-#     graph_length=8,
-# )
-
-# seq_unnormalized = SequenceGraphDataset(
-#     train_kitti_datasets[dataset],
-#     stride=15,
-#     transform=None,
-#     graph_length=8,
-# )
-
-# # get five random graphs
-# idx = np.random.randint(0, len(seq) - 128, 5)
-# graphs = [seq[i] for i in idx]
-# graphs_unnormalized = [seq_unnormalized[i] for i in idx]
-# plt.figure(figsize=(10, 5))
-# for graph, graph_unnormalized, index in zip(graphs, graphs_unnormalized, idx):
-#     # set aspect ratio to 1
-#     plt.plot(
-#         graph_unnormalized.y[:, 0], graph_unnormalized.y[:, 2], label=f"Ścieżka {index}"
-#     )
-#     plt.plot(graph.y[:, 0], graph.y[:, 2], label=f"Ścieżka {index} (po transformacji)")
-#     # scatter beginnings of the graphs
-#     plt.scatter(graph.y[0, 0], graph.y[0, 2], c="black")
-#     plt.scatter(graph_unnormalized.y[0, 0], graph_unnormalized.y[0, 2], c="black")
-#     # show grid
-# plt.gca().set_aspect("equal")
-# plt.grid()
-# plt.tight_layout()
-# plt.legend()
-# plt.xlabel("x")
-# plt.ylabel("z")
-# # plt.title("Przekształcenie reset_to_first_node")
-# # plt.show()
-# # save to file
-# plt.savefig("reset_to_first_node.png")
-
 
 graph_datasets = [
     SequenceGraphDataset(
@@ -185,22 +141,28 @@ eval_dataloader = DataLoader(
 
 model = GraphVO().to(device)
 
+state_dict = torch.load("./models_img_stride_nodeindex/model_after_100.pth")
+model.load_state_dict(state_dict)
+model.to(device)
+
 # criterion = JustLastNodeLoss(
 #     alpha=20, batch_size=BATCH_SIZE, graph_length=GRAPH_LENGTH
 # ).to(device)
 
-criterion = AllNodesLoss(alpha=0.8).to(device)
+criterion = AllNodesLoss(alpha=20).to(device)
 # criterion = LastNodeShiftLoss(alpha=20, batch_size=BATCH_SIZE, graph_length=GRAPH_LENGTH).to(device)
 optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
 
 EPOCHS = 100
 SAVE_MODEL = True
 SAVE_INTERVAL = 100
-SAVE_DIR = "models_img_stride15"
+SAVE_DIR = "models_img_stride_nodeindex_round2"
 os.makedirs(SAVE_DIR, exist_ok=True)
+with open(f"{SAVE_DIR}/losses.txt", "w") as f:
+    f.write("epoch,train_loss,eval_loss\n")
 
 for epoch in range(1, EPOCHS + 1):
-    model = train(
+    model, train_loss = train(
         model,
         train_dataloader,
         optimizer,
@@ -212,4 +174,7 @@ for epoch in range(1, EPOCHS + 1):
         SAVE_DIR,
     )
     eval_loss = evaluate(model, eval_dataloader, criterion, device, epoch)
-    print(f"Eval loss: {eval_loss}")
+    with open(f"{SAVE_DIR}/losses.txt", "a") as f:
+        f.write(f"{epoch},{train_loss},{eval_loss}\n")
+    print(f"Train loss epoch {epoch}: {train_loss}")
+    print(f"Eval loss epoch {epoch}: {eval_loss}")
