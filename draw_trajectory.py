@@ -54,35 +54,20 @@ def set_size(width_pt, fraction=1, subplots=(1, 1)):
     return (fig_width_in, fig_height_in)
 
 
-MODEL = "deepvo_simpler"
-
-df = pd.read_csv(f"models_{MODEL}/losses.txt")
+df = pd.read_csv(f"data/kitti_superpoint_supergluematch.txt")
 
 print(df)
 
-df = df.reset_index(drop=True)
-df["epoch"] = df.index + 1
+fig, ax = plt.subplots(1, 1, figsize=set_size(455))
 
-fig, ax = plt.subplots(2, 1, figsize=set_size(455))
-fig.subplots_adjust(wspace=0.4)
+# plot x and z
+ax.plot(df["gtx"], df["gtz"], label=r"\textit{Ground truth}")
+ax.plot(df["tx"], df["tz"], label="Przewidywana ścieżka")
+ax.scatter(0, 0, label="Początek sekwencji", c="black")
+ax.set_xlabel("x")
+ax.set_ylabel("y")
+ax.grid()
+ax.legend()
 
-ax[0].plot(df["epoch"], df["train_loss"], label="Trening")
-ax[1].plot(df["epoch"], df["eval_loss"], label="Walidacja", color="orange")
-
-# draw moving average
-window_size = 5
-eval_loss = df["eval_loss"].rolling(10).mean()
-# lighter, dashed line
-ax[1].plot(df["epoch"], eval_loss, label="Walidacja (średnia krocząca)", linestyle="--", color="green")
-
-ax[0].set_xlabel("Epoka")
-ax[0].set_ylabel("Wartość funkcji straty")
-
-ax[1].set_xlabel("Epoka")
-ax[1].set_ylabel("Wartość funkcji straty")
-
-ax[0].legend()
-ax[1].legend()
-
-fig.savefig(f"data/losses_{MODEL}.pgf")
-fig.savefig(f"data/losses_{MODEL}.png")
+plt.savefig("data/trajektoria.png", dpi=300)
+plt.savefig("data/trajektoria.pgf")

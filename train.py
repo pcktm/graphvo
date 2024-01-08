@@ -12,7 +12,7 @@ from dataset import (
     SequenceGraphDataset,
 )
 from loss import AllNodesLoss, JustLastNodeLoss, LastNodeShiftLoss
-from model import GraphVO
+from model import GraphVO, PoseGNN
 
 from utils import NormalizeKITTIPose, RelativeShift, ResetToFirstNode
 
@@ -84,11 +84,12 @@ def evaluate(
 
 os.makedirs("data", exist_ok=True)
 basedir_kitti = "/home/pcktm/inzynierka/kitti/dataset_64px"
-train_sequences_kitti = ["00", "02", "08", "09"]
+train_sequences_kitti = ["00", "01", "02", "08", "09"]
 train_kitti_datasets = [
     KittiSequenceDataset(
         basedir_kitti,
         sequence_name,
+        load_images=True,
     )
     for sequence_name in train_sequences_kitti
 ]
@@ -102,7 +103,7 @@ transform = T.Compose(
         T.AddRemainingSelfLoops(),
         T.RemoveDuplicatedEdges(),
         # T.GDC(),
-        # T.VirtualNode(),
+        T.VirtualNode(),
     ]
 )
 
@@ -128,7 +129,7 @@ train_dataloader = DataLoader(
 )
 
 eval_dataset = SequenceGraphDataset(
-    base_dataset=KittiSequenceDataset(basedir_kitti, "05"),
+    base_dataset=KittiSequenceDataset(basedir_kitti, "05", load_images=True),
     graph_length=GRAPH_LENGTH,
     transform=transform,
 )
@@ -141,7 +142,7 @@ eval_dataloader = DataLoader(
 
 model = GraphVO().to(device)
 
-state_dict = torch.load("./models_img_stride_nodeindex/model_after_100.pth")
+state_dict = torch.load("./models_deepvo_simpler/model_after_100.pth")
 model.load_state_dict(state_dict)
 model.to(device)
 
@@ -149,14 +150,14 @@ model.to(device)
 #     alpha=20, batch_size=BATCH_SIZE, graph_length=GRAPH_LENGTH
 # ).to(device)
 
-criterion = AllNodesLoss(alpha=20).to(device)
+criterion = AllNodesLoss(alpha=50).to(device)
 # criterion = LastNodeShiftLoss(alpha=20, batch_size=BATCH_SIZE, graph_length=GRAPH_LENGTH).to(device)
 optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
 
-EPOCHS = 100
+EPOCHS = 150
 SAVE_MODEL = True
 SAVE_INTERVAL = 100
-SAVE_DIR = "models_img_stride_nodeindex_round2"
+SAVE_DIR = "models_deepvo_simpler_r2"
 os.makedirs(SAVE_DIR, exist_ok=True)
 with open(f"{SAVE_DIR}/losses.txt", "w") as f:
     f.write("epoch,train_loss,eval_loss\n")

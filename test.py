@@ -14,7 +14,7 @@ from dataset import (
     SequenceGraphDataset,
 )
 from loss import AllNodesLoss, JustLastNodeLoss
-from model import GraphVO
+from model import GraphVO, PoseGNN
 
 from torch_geometric.utils import dropout_edge, dropout_node
 
@@ -104,14 +104,14 @@ basedir_kitti = "/home/pcktm/inzynierka/kitti/dataset"
 
 transform = T.Compose(
     [
-     NormalizeKITTIPose(),
+        NormalizeKITTIPose(),
         #ResetToFirstNode(),
         RelativeShift(),
         T.ToUndirected(),
         T.AddRemainingSelfLoops(),
         T.RemoveDuplicatedEdges(),
         # T.GDC(),
-        # T.VirtualNode(),
+        T.VirtualNode(),
     ]
 )
 
@@ -119,7 +119,7 @@ GRAPH_LENGTH = 8
 BATCH_SIZE = 1
 
 eval_dataset = SequenceGraphDataset(
-    base_dataset=KittiSequenceDataset(basedir_kitti, "02"),
+    base_dataset=KittiSequenceDataset(basedir_kitti, "05"),
     graph_length=GRAPH_LENGTH,
     stride=15,
     transform=transform,
@@ -134,13 +134,14 @@ eval_dataloader = DataLoader(
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device {device}")
 
+# model = PoseGNN()
 model = GraphVO()
-state = torch.load("./models_img_stride_nodeindex_round2/model_after_100.pth")
+state = torch.load("./models_deepvo_simpler_r2/model_after_67.pth")
 model.load_state_dict(state)
 model.to(device)
 model.eval()
 
-USE_FILE = True
+USE_FILE = False
 
 if not USE_FILE or not os.path.exists("data/predicted.npy"):
     predicted, ground_truth = test(model, eval_dataloader, device)
@@ -153,7 +154,7 @@ else:
     ground_truth = np.load("data/ground_truth.npy")
 
 # from each graph select second node
-node_idx = 6
+node_idx = 3
 gt_2 = ground_truth[:, node_idx]
 integrated_gt = np.zeros_like(gt_2)
 predicted_2 = predicted[:, node_idx]
@@ -177,7 +178,8 @@ ax.set_xlabel("x")
 ax.set_ylabel("y")
 ax.grid()
 fig.savefig("data/integrated-path.pgf")
-fig.savefig("data/integrated-path.png")
+# save as large png
+fig.savefig("data/integrated-path.png", dpi=300)
 
 
 # seq = SequenceGraphDataset(
